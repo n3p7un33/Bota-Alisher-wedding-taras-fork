@@ -3,6 +3,8 @@ import pandas as pd
 import os
 import base64
 import datetime
+from pydantic import BaseModel
+from streamlit.connections import GSheetsConnection
 
 # --- Page Configuration ---
 st.set_page_config(
@@ -13,6 +15,27 @@ st.set_page_config(
 
 # --- File for RSVPs ---
 RSVP_FILE = "rsvps.csv"
+
+# --- Google Sheets Configuration ---
+conn = st.experimental_connection("gsheets", type=GSheetsConnection)
+
+# --- Validation Model and Function ---
+class CodeRequest(BaseModel):
+    code: str
+
+def validate_code(code: str):
+    df = conn.read(worksheet="Codes", ttl=5)
+    rec = df[df["Code"] == code]
+    if rec.empty:
+        raise ValueError("Invalid code")
+    row = rec.iloc[0]
+    name = row.get("NameAsso") or row.get("Name")
+    raw = row.get("Status")
+    if isinstance(raw, bool):
+        status = "yes" if raw else "no"
+    else:
+        status = str(raw or "no").lower()
+    return name, status
 
 # --- Function to get base64 encoded image for CSS ---
 def get_base64_of_bin_file(bin_file):
@@ -304,12 +327,31 @@ def show_landing_page():
         st.session_state.landing_done = True
         st.rerun()
 
+# --- Login Logic ---
+def login():
+    st.title("\U0001F512 Enter Access Code")
+    code = st.text_input("Code", key="login_code")
+    if st.button("Submit"):
+        try:
+            st.session_state.name, st.session_state.status = validate_code(code)
+            st.session_state.authenticated = True
+            st.experimental_rerun()
+        except Exception:
+            st.error("\u274C Invalid code")
+
 # --- Main App Routing ---
 if "landing_done" not in st.session_state:
     st.session_state.landing_done = False
 
 if not st.session_state.landing_done:
     show_landing_page()
+    st.stop()
+
+if "authenticated" not in st.session_state:
+    st.session_state.authenticated = False
+
+if not st.session_state.authenticated:
+    login()
     st.stop()
 
 # --- Main App Logic ---
@@ -335,6 +377,8 @@ lang_choice = st.sidebar.radio("Language / Тіл", ["Русский", "Қаза
 lang = "ru" if lang_choice == "Русский" else "kz"
 
 t = content[lang]
+
+st.success(f"Welcome, {st.session_state.get('name','Guest')}! Status: {st.session_state.get('status','').upper()}")
 
 # --- Display Invitation Details ---
 
