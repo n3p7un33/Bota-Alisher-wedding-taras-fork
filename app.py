@@ -3,8 +3,7 @@ import pandas as pd
 import os
 import base64
 import datetime
-from pydantic import BaseModel
-from airtable import Airtable
+from streamlit_gsheets import GSheetsConnection
 
 # --- Page Configuration ---
 st.set_page_config(
@@ -16,25 +15,21 @@ st.set_page_config(
 # --- File for RSVPs ---
 RSVP_FILE = "rsvps.csv"
 
-# --- Airtable Configuration ---
-AT = st.secrets.get("AIRTABLE", {})
-airtable = Airtable(AT.get("base_id", ""), AT.get("table_name", ""), api_key=AT.get("api_key", ""))
-
-# --- Validation Model and Function ---
-class CodeRequest(BaseModel):
-    code: str
+# --- Google Sheets Connection ---
+conn = st.experimental_connection("gsheets", type=GSheetsConnection)
 
 def validate_code(code: str):
-    recs = airtable.search("Code", code)
-    if not recs:
+    df = conn.read(worksheet="Codes")
+    recs = df[df["Code"] == code]
+    if recs.empty:
         raise ValueError("Invalid code")
-    f = recs[0]["fields"]
-    name = f.get("NameAsso") or f.get("Name")
-    raw = f.get("Status")
+    row = recs.iloc[0]
+    name = row.get("NameAsso") or row.get("Name")
+    raw = row.get("Status")
     if isinstance(raw, bool):
         status = "yes" if raw else "no"
     else:
-        status = (raw or "no").lower()
+        status = str(raw or "no").lower()
     return name, status
 
 # --- Function to get base64 encoded image for CSS ---
